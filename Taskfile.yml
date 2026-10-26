@@ -1,0 +1,46 @@
+version: '3'
+
+vars:
+  APP_NAME: "zipkit"
+  BIN_DIR: "bin"
+  # 程序版本号，注入到 main.Version（-ldflags "-X main.Version=..."）。
+  # 同时决定内置工具的释放目录（tools/<VERSION>/），所以发版时记得改：
+  #   wails3 build VERSION=1.2.0
+  VERSION: '{{.VERSION | default "dev"}}'
+  # Target OS for build/package/run. This project ships Windows only.
+  GOOS: '{{.GOOS | default OS}}'
+
+includes:
+  common: ./build/Taskfile.yml
+  windows: ./build/windows/Taskfile.yml
+
+tasks:
+  build:
+    summary: Builds the application
+    cmds:
+      - task: "{{.GOOS}}:build"
+
+  package:
+    summary: Packages a production build of the application
+    cmds:
+      - task: "{{.GOOS}}:package"
+
+  run:
+    summary: Runs the application
+    cmds:
+      - task: "{{.GOOS}}:run"
+
+  dev:
+    summary: Runs the application in development mode
+    cmds:
+      - wails3 dev -config ./build/config.yml
+
+  build:server:
+    summary: Builds the application in server mode (no GUI, HTTP server only)
+    cmds:
+      - task: common:build:server
+
+  run:server:
+    summary: Runs the application in server mode
+    cmds:
+      - task: common:run:server

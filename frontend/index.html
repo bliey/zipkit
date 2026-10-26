@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>zipkit</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body data-file-drop-target>
+    <header class="topbar">
+      <div class="brand">
+        <button id="brand-home" class="logo" type="button" title="返回初始状态" aria-label="返回初始状态">
+          <img src="/assets/appicon.png" alt="zipkit" />
+        </button>
+        <div class="brand-text">
+          <h1>zipkit</h1>
+          <p class="tagline">ZIP 侦察 · 批量破解 · 批量解压 · 明文攻击 · GPU 恢复</p>
+        </div>
+      </div>
+
+      <div class="actions">
+        <span id="status" class="status" role="status" aria-live="polite"></span>
+        <button id="settings-btn" class="btn-ghost" type="button" title="设置（外部工具路径、并发数、默认导出目录）">⚙ 设置</button>
+        <button id="pick-btn" class="btn-primary" type="button">选择 ZIP 文件</button>
+      </div>
+    </header>
+
+    <main id="main">
+      <div class="drop-overlay" aria-hidden="true">
+        <div class="drop-overlay-box">
+          <span class="drop-overlay-icon" id="drop-overlay-icon">PK</span>
+          <p id="drop-overlay-title">松开以开始新流程</p>
+          <p class="muted" id="drop-overlay-hint">1 个进入单文件视图，≥2 个进入批量视图；当前状态会被清空</p>
+        </div>
+      </div>
+
+      <div id="error-card" class="error-card hidden">
+        <div class="error-head">
+          <strong id="error-title">出错了</strong>
+          <span class="error-actions">
+            <button id="error-copy" class="btn-ghost" type="button">复制错误信息</button>
+            <button id="error-close" class="btn-ghost" type="button" aria-label="关闭">×</button>
+          </span>
+        </div>
+        <pre id="error-detail" class="mono"></pre>
+      </div>
+
+      <div id="sevenzip-banner" class="banner hidden">
+        <div class="banner-text">
+          <strong>未检测到 7z，批量解压功能不可用。</strong>
+          <span class="muted">批量破解不需要 7z；需要解压时请安装 7-Zip，或在下面指定 7z 路径。</span>
+        </div>
+        <div class="banner-actions">
+          <input id="sevenzip-input" class="path-input mono" type="text" spellcheck="false" placeholder="C:\Program Files\7-Zip\7z.exe" />
+          <button id="sevenzip-browse" class="btn-ghost" type="button">浏览…</button>
+          <button id="sevenzip-save" class="btn-ghost" type="button">保存</button>
+          <button id="sevenzip-recheck" class="btn-ghost" type="button">重新检测</button>
+        </div>
+      </div>
+
+      <div id="bkcrack-banner" class="banner hidden">
+        <div class="banner-text">
+          <strong>未找到 bkcrack，明文攻击不可用。</strong>
+          <span class="muted">批量破解与批量解压都不依赖 bkcrack；要做明文攻击时，请下载 bkcrack 或在下面指定路径。</span>
+        </div>
+        <div class="banner-actions">
+          <input id="bkcrack-input" class="path-input mono" type="text" spellcheck="false" placeholder="C:\tools\bkcrack\bkcrack.exe" />
+          <button id="bkcrack-browse" class="btn-ghost" type="button">浏览…</button>
+          <button id="bkcrack-save" class="btn-ghost" type="button">保存</button>
+          <button id="bkcrack-recheck" class="btn-ghost" type="button">重新检测</button>
+        </div>
+      </div>
+
+      <div id="hashcat-banner" class="banner hidden">
+        <div class="banner-text">
+          <strong>未找到 hashcat，GPU 恢复不可用。</strong>
+          <span class="muted">明文攻击与批量破解不受影响；要用 GPU 恢复 AES / RAR5 / 7z 密码时，请下载 hashcat 或在下面指定路径。</span>
+        </div>
+        <div class="banner-actions">
+          <input id="hashcat-input" class="path-input mono" type="text" spellcheck="false" placeholder="C:\tools\hashcat\hashcat.exe" />
+          <button id="hashcat-browse" class="btn-ghost" type="button">浏览…</button>
+          <button id="hashcat-save" class="btn-ghost" type="button">保存</button>
+          <button id="hashcat-recheck" class="btn-ghost" type="button">重新检测</button>
+        </div>
+      </div>
+
+      <section id="empty" class="empty">
+        <p class="empty-title">还没有打开文件</p>
+        <p class="empty-hint">
+          选择一个或多个 ZIP，查看中央目录、加密方式与本地文件头。<br />
+          选中 2 个以上自动进入批量模式，可并行尝试 6–8 位纯数字密码。<br />
+          也可以把文件直接拖进窗口，或在批量视图里点「+ 添加文件」逐个加入。<br />
+          破解完成后可以用找到的密码一键解压（需要系统里有 7-Zip）。<br />
+          如果有已知明文，单文件视图里还能用 bkcrack 恢复密钥、解密整个包。<br />
+          AES / RAR5 / 7z 条目可以提取哈希交给 hashcat，用 GPU 恢复密码。<br />
+          解析与破解都在本地完成，不上传、不修改原压缩包。
+        </p>
+      </section>
+
+      <section id="report" class="hidden">
+        <div id="detail-bar" class="detail-bar hidden">
+          <button id="detail-back" class="btn-ghost" type="button">← 返回批量视图</button>
+          <button id="open-folder-btn" class="btn-ghost hidden" type="button">打开所在文件夹</button>
+          <span id="detail-hint" class="muted detail-hint hidden"></span>
+          <span class="muted">批量任务仍在后台进行，进度不会丢失</span>
+        </div>
+
+        <div class="card summary">
+          <div class="summary-path">
+            <span class="label">文件</span>
+            <span id="file-path" class="mono path-text"></span>
+            <button id="to-batch-btn" class="btn-ghost summary-action hidden" type="button" title="把这个文件放进批量列表，再继续添加其他文件">加入批量</button>
+          </div>
+          <div class="chips" id="file-chips"></div>
+        </div>
+
+        <div id="fake-card" class="card attack-card fake-card hidden">
+          <div class="attack-head">
+            <div class="attack-heading">
+              <h2 id="fake-title">检测到疑似伪加密</h2>
+              <p id="fake-sub" class="muted"></p>
+            </div>
+            <button id="fake-fix" class="btn-primary" type="button">修复伪加密</button>
+          </div>
+          <p class="attack-hint">
+            真正的加密文件两处标记都是 1；伪加密只有中央目录是 1，本地文件头和数据都没动。
+            所以修复只改中央目录，另存一份新文件，原文件不会被碰。
+          </p>
+          <div id="fake-result" class="attack-result hidden">
+            <div class="attack-result-line">
+              <span class="label">已修复</span>
+              <code id="fake-output" class="keys mono"></code>
+            </div>
+            <div class="attack-result-actions">
+              <button id="fake-open-folder" class="btn-ghost" type="button">打开所在文件夹</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="plain-card" class="card attack-card hidden">
+          <div class="attack-head">
+            <div class="attack-heading">
+              <h2>此文件未加密</h2>
+              <p id="plain-sub" class="muted">没有加密条目，不需要密码，可以直接解压。</p>
+            </div>
+            <button id="plain-unzip" class="btn-primary" type="button">直接解压</button>
+          </div>
+        </div>
+
+        <div id="attack-card" class="card attack-card hidden">
+          <div class="attack-head">
+            <div class="attack-heading">
+              <h2 id="attack-title">可尝试明文攻击</h2>
+              <p id="attack-sub" class="muted"></p>
+            </div>
+            <div class="attack-head-actions">
+              <span class="split-btn">
+                <button id="quick-crack" class="btn-ghost" type="button" title="先花几秒试试纯数字密码，位数可在右侧调整">快速弱密码检测</button>
+                <button id="quick-range-btn" class="btn-ghost split-toggle" type="button" title="设置快速检测的位数范围" aria-label="位数设置" aria-expanded="false" aria-controls="quick-range">▾</button>
+              </span>
+              <button id="attack-open" class="btn-primary" type="button">开始明文攻击</button>
+              <button id="attack-gpu" class="btn-ghost" type="button">显卡加速破解</button>
+            </div>
+          </div>
+
+          <!-- 长度范围：两个数字框 + 短横线，作为一个整体控件。
+               三处（快速检测 / 批量破解 / 显卡暴力）结构完全一致，
+               校验统一走 app.js 的 readLengthRange。 -->
+          <div id="quick-range" class="quick-range hidden">
+            <span class="len-range">
+              <span class="label">长度范围</span>
+              <span class="range-input">
+                <input id="quick-min-len" class="num-input" type="number" min="1" max="12" value="6" inputmode="numeric" aria-label="最小位数" />
+                <span class="range-dash" aria-hidden="true">–</span>
+                <input id="quick-max-len" class="num-input" type="number" min="1" max="12" value="8" inputmode="numeric" aria-label="最大位数" />
+              </span>
+            </span>
+            <span class="muted small">范围 1–12 位，默认 6–8 位</span>
+          </div>
+          <p id="quick-slow-hint" class="warn-text hidden">纯数字 10 位以上在 Go 原生实现下可能需要数分钟，如需更快请使用显卡加速破解</p>
+
+          <p id="attack-disabled-hint" class="attack-hint hidden">未找到 bkcrack，请在设置中指定路径</p>
+
+          <div id="quick-result" class="quick-result hidden">
+            <span class="label">密码</span>
+            <code id="quick-password" class="keys mono"></code>
+            <button id="quick-copy" class="btn-ghost" type="button">复制</button>
+            <button id="quick-decrypt" class="btn-ghost" type="button">解密文件</button>
+            <span id="quick-note" class="muted"></span>
+          </div>
+
+          <div id="attack-panel" class="attack-panel hidden">
+            <div class="attack-grid">
+              <label class="attack-field">
+                <span class="label">目标条目</span>
+                <select id="attack-entry" class="select-input"></select>
+              </label>
+
+              <div class="attack-field">
+                <span class="label">明文形式</span>
+                <div class="radio-row">
+                  <label class="radio"><input type="radio" name="attack-plain-mode" value="file" checked /><span>独立文件</span></label>
+                  <label class="radio"><input type="radio" name="attack-plain-mode" value="zip" /><span>明文 ZIP</span></label>
+                  <label class="radio"><input type="radio" name="attack-plain-mode" value="hex" /><span>十六进制</span></label>
+                </div>
+              </div>
+
+              <div id="attack-plain-path-field" class="attack-field attack-field-wide">
+                <span class="label">明文路径</span>
+                <div class="path-row">
+                  <input id="attack-plain-path" class="path-input mono" type="text" spellcheck="false" placeholder="选择已知明文文件…" readonly />
+                  <button id="attack-plain-browse" class="btn-ghost" type="button">浏览…</button>
+                </div>
+              </div>
+
+              <label id="attack-plain-entry-field" class="attack-field hidden">
+                <span class="label">明文条目名</span>
+                <select id="attack-plain-entry" class="select-input"></select>
+              </label>
+
+              <div id="attack-hex-fields" class="attack-field attack-field-wide hidden">
+                <span class="label">十六进制明文</span>
+                <input id="attack-hex-text" class="path-input mono" type="text" spellcheck="false" placeholder="89 50 4E 47 0D 0A 1A 0A" />
+                <div class="hex-sub">
+                  <label class="inline-field">
+                    <span class="label">偏移</span>
+                    <input id="attack-hex-offset" class="num-input mono" type="text" value="0" title="支持十进制或 0x 前缀" />
+                  </label>
+                  <label class="inline-field">
+                    <span class="label">常用文件头</span>
+                    <select id="attack-hex-template" class="select-input">
+                      <option value="">选择模板…</option>
+                      <option value="png">PNG（89504E470D0A1A0A）</option>
+                      <option value="jpeg">JPEG（FFD8FF）</option>
+                      <option value="pdf">PDF（25504446）</option>
+                      <option value="zip">ZIP（504B0304）</option>
+                      <option value="gif89">GIF89a（474946383961）</option>
+                      <option value="gif87">GIF87a（474946383761）</option>
+                    </select>
+                  </label>
+                </div>
+                <p class="muted small">偏移支持十进制或 0x 前缀；输入框会自动过滤非十六进制字符并每 2 位加空格。</p>
+              </div>
+            </div>
+
+            <div id="attack-creator" class="creator-compare hidden"></div>
+
+            <div id="attack-precheck" class="precheck hidden"></div>
+
+            <div class="attack-actions">
+              <button id="attack-start" class="btn-primary" type="button">开始攻击</button>
+              <button id="attack-stop" class="btn-danger hidden" type="button">停止</button>
+              <span id="attack-warn" class="warn-text hidden">预检未通过，仍可尝试，但成功率较低</span>
+            </div>
+
+            <div id="attack-log-card" class="log-card hidden">
+              <div class="log-head">
+                <span>bkcrack 输出</span>
+                <span id="attack-log-count" class="muted"></span>
+              </div>
+              <pre id="attack-log" class="attack-log mono"></pre>
+            </div>
+
+            <div id="attack-result" class="attack-result hidden">
+              <div class="attack-result-line">
+                <span class="label">密钥</span>
+                <code id="attack-keys" class="keys mono"></code>
+                <button id="attack-copy-keys" class="btn-ghost" type="button">复制</button>
+              </div>
+              <div class="attack-result-actions">
+                <button id="attack-decrypt-zip" class="btn-primary" type="button">解密整个包</button>
+                <button id="attack-decrypt-entry" class="btn-ghost" type="button">只解出目标条目</button>
+              </div>
+            </div>
+
+            <div id="attack-fail" class="attack-fail hidden">
+              <p id="attack-fail-text" class="fail-title"></p>
+              <pre id="attack-fail-raw" class="attack-log mono"></pre>
+            </div>
+          </div>
+        </div>
+
+        <div id="gpu-card" class="card attack-card hidden">
+          <div class="attack-head">
+            <div class="attack-heading">
+              <h2 id="gpu-title">需要 GPU 加速恢复</h2>
+              <p id="gpu-sub" class="muted"></p>
+            </div>
+            <button id="gpu-open" class="btn-primary" type="button">显卡加速破解</button>
+          </div>
+          <p id="gpu-disabled-hint" class="attack-hint hidden">未找到 hashcat，请在设置中指定路径</p>
+          <div id="gpu-john-hint" class="attack-hint hidden">
+            <p id="gpu-john-text"></p>
+            <div class="path-row">
+              <input id="gpu-john-input" class="path-input mono" type="text" spellcheck="false" />
+              <button id="gpu-john-browse" class="btn-ghost" type="button">浏览…</button>
+              <button id="gpu-john-save" class="btn-ghost" type="button">保存</button>
+            </div>
+          </div>
+
+          <div id="gpu-panel" class="attack-panel hidden">
+            <div class="gpu-hash-row">
+              <span class="label">哈希</span>
+              <code id="gpu-hash" class="gpu-hash mono"></code>
+              <button id="gpu-hash-toggle" class="btn-ghost hidden" type="button">展开</button>
+            </div>
+
+            <div class="attack-grid attack-grid-stacked">
+              <label id="gpu-entry-field" class="attack-field attack-field-wide hidden">
+                <span class="label">目标条目</span>
+                <select id="gpu-entry" class="select-input"></select>
+              </label>
+
+              <div class="attack-field">
+                <span class="label">攻击策略</span>
+                <div class="radio-row">
+                  <label class="radio"><input type="radio" name="gpu-strategy" value="dictionary" /><span>字典</span></label>
+                  <label class="radio"><input type="radio" name="gpu-strategy" value="mask" checked /><span>掩码</span></label>
+                  <label class="radio"><input type="radio" name="gpu-strategy" value="bruteforce" /><span>暴力</span></label>
+                </div>
+              </div>
+
+              <div id="gpu-mask-field" class="attack-field">
+                <span class="label">掩码</span>
+                <div class="mask-row">
+                  <input id="gpu-mask" class="path-input mono" type="text" spellcheck="false" placeholder="?d?d?d?d?d?d" />
+                  <button
+                    id="gpu-mask-help-btn"
+                    class="mask-help-btn"
+                    type="button"
+                    title="掩码语法说明"
+                    aria-label="掩码语法说明"
+                    aria-expanded="false"
+                    aria-controls="mask-help"
+                  >?</button>
+                </div>
+
+                <!-- 掩码本身就是定长的，所以这里不出现长度范围输入框，
+                     只留一句指路说明。 -->
+                <p id="gpu-mask-len-hint" class="mask-len-hint">掩码决定密码长度，如需指定长度范围请用「暴力」策略</p>
+
+                <!-- 掩码帮助：纯静态内容，就地展开，不弹模态框 -->
+                <div id="mask-help" class="mask-help hidden" role="region" aria-label="掩码语法说明">
+                  <p class="mask-help-title">占位符</p>
+                  <table class="mask-table">
+                    <thead>
+                      <tr><th>占位符</th><th>含义</th><th>示例</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr><td><code>?d</code></td><td>数字 0-9</td><td><code>42</code></td></tr>
+                      <tr><td><code>?l</code></td><td>小写字母 a-z</td><td><code>ab</code></td></tr>
+                      <tr><td><code>?u</code></td><td>大写字母 A-Z</td><td><code>AB</code></td></tr>
+                      <tr><td><code>?s</code></td><td>特殊符号</td><td><code>!@</code></td></tr>
+                      <tr><td><code>?a</code></td><td>以上全部（?d?l?u?s）</td><td><code>a4</code></td></tr>
+                      <tr><td><code>?b</code></td><td>全部字节 0x00-0xFF</td><td><code>0x</code></td></tr>
+                    </tbody>
+                  </table>
+
+                  <p class="mask-help-title">常见场景</p>
+                  <ul class="mask-examples">
+                    <li><code>?d?d?d?d?d?d</code><span>6 位纯数字</span></li>
+                    <li><code>?d?d?d?d?d?d?d?d</code><span>8 位纯数字</span></li>
+                    <li><code>?l?l?l?l?d?d</code><span>4 个小写字母 + 2 个数字</span></li>
+                    <li><code>?u?l?l?l?l?d?d?d?d</code><span>首字母大写 + 4 个小写字母 + 4 个数字</span></li>
+                    <li><code>?a?a?a?a?a?a</code><span>6 位任意可打印字符</span></li>
+                  </ul>
+
+                  <p class="mask-note">
+                    掩码位数必须等于密码长度，<code>?d?d?d</code> 只匹配 3 位密码，不会匹配 2 位或 4 位。
+                    如果密码长度不确定，请用「暴力」策略配合长度范围。
+                  </p>
+                </div>
+              </div>
+
+              <label id="gpu-charset-field" class="attack-field hidden">
+                <span class="label">字符集</span>
+                <input id="gpu-charset" class="path-input mono" type="text" spellcheck="false" value="0123456789" />
+              </label>
+
+              <div id="gpu-len-field" class="attack-field hidden">
+                <span class="label">长度范围</span>
+                <span class="range-input">
+                  <input id="gpu-min-len" class="num-input" type="number" min="1" max="12" value="1" inputmode="numeric" aria-label="最小位数" />
+                  <span class="range-dash" aria-hidden="true">–</span>
+                  <input id="gpu-max-len" class="num-input" type="number" min="1" max="12" value="8" inputmode="numeric" aria-label="最大位数" />
+                </span>
+              </div>
+
+              <div id="gpu-wordlist-field" class="attack-field attack-field-wide hidden">
+                <span class="label">字典路径</span>
+                <div class="path-row">
+                  <input id="gpu-wordlist" class="path-input mono" type="text" spellcheck="false" placeholder="选择词表文件，例如 rockyou.txt" />
+                  <button id="gpu-wordlist-browse" class="btn-ghost" type="button">浏览…</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="attack-actions">
+              <button id="gpu-start" class="btn-primary" type="button">开始</button>
+              <button id="gpu-stop" class="btn-danger hidden" type="button">停止</button>
+              <span id="gpu-warn" class="warn-text hidden"></span>
+            </div>
+
+            <div id="gpu-progress-card" class="gpu-progress hidden">
+              <div class="gpu-progress-bar"><i id="gpu-progress-fill"></i></div>
+              <div class="gpu-progress-fields">
+                <span><em>状态</em><b id="gpu-status">—</b></span>
+                <span><em>速度</em><b id="gpu-speed">—</b></span>
+                <span><em>进度</em><b id="gpu-progress">—</b></span>
+                <span><em>预计剩余</em><b id="gpu-eta">—</b></span>
+              </div>
+            </div>
+
+            <div id="gpu-log-card" class="log-card hidden">
+              <div class="log-head">
+                <span>hashcat 输出</span>
+                <span id="gpu-log-count" class="muted"></span>
+              </div>
+              <pre id="gpu-log" class="attack-log mono"></pre>
+            </div>
+
+            <div id="gpu-result" class="attack-result hidden">
+              <div class="attack-result-line">
+                <span class="label">密码</span>
+                <code id="gpu-password" class="keys mono"></code>
+                <button id="gpu-copy-password" class="btn-ghost" type="button">复制</button>
+              </div>
+              <div class="attack-result-actions">
+                <button id="gpu-decrypt" class="btn-primary" type="button">解密文件</button>
+              </div>
+            </div>
+
+            <div id="gpu-fail" class="attack-fail hidden">
+              <p id="gpu-fail-text" class="fail-title"></p>
+              <pre id="gpu-fail-raw" class="attack-log mono"></pre>
+            </div>
+          </div>
+        </div>
+
+        <div id="entry-card" class="card table-card">
+          <div class="card-head">
+            <h2>中央目录条目<span class="head-hint">点击文件名可展开字段详情</span></h2>
+            <span class="muted" id="entry-count"></span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th class="col-name">文件名</th>
+                  <th class="col-method">压缩方式</th>
+                  <th class="col-enc">加密类型</th>
+                  <th class="col-num">CRC32</th>
+                  <th class="col-num">原始大小</th>
+                  <th class="col-num">压缩后</th>
+                </tr>
+              </thead>
+              <tbody id="entry-body"></tbody>
+            </table>
+          </div>
+          <div class="table-foot hidden" id="entry-more"></div>
+        </div>
+
+        <div class="card hex-card hidden" id="hex-card">
+          <div class="card-head">
+            <h2>本地文件头 <span class="mono entry-ref" id="hex-entry"></span></h2>
+            <span class="muted mono" id="hex-offset"></span>
+          </div>
+          <div class="hex" id="hex-dump"></div>
+          <div class="hex-legend">
+            <span><i class="swatch sig"></i>签名 <code>50 4B 03 04</code></span>
+            <span><i class="swatch gpbf"></i>通用位标记 GPBF</span>
+            <span class="muted">偏移为十六进制，右侧为 ASCII 视图</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="batch" class="hidden">
+        <div class="card table-card files-card">
+          <div class="card-head">
+            <h2>文件列表</h2>
+            <div class="head-actions">
+              <span class="muted" id="batch-file-summary"></span>
+              <button id="add-files-btn" class="btn-ghost" type="button">+ 添加文件</button>
+            </div>
+          </div>
+          <div class="table-wrap files-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th class="col-name">文件名</th>
+                  <th class="col-enc">加密类型</th>
+                  <th class="col-num">大小</th>
+                  <th class="col-status">状态</th>
+                </tr>
+              </thead>
+              <tbody id="batch-file-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card control-bar">
+          <button id="batch-start" class="btn-primary" type="button">开始批量破解</button>
+
+          <div class="field">
+            <span class="label">长度范围</span>
+            <span class="range-input">
+              <input id="min-len" class="num-input" type="number" min="1" max="12" value="6" inputmode="numeric" aria-label="最小位数" />
+              <span class="range-dash" aria-hidden="true">–</span>
+              <input id="max-len" class="num-input" type="number" min="1" max="12" value="8" inputmode="numeric" aria-label="最大位数" />
+            </span>
+          </div>
+
+          <div class="field concurrency-field">
+            <span id="concurrency-text" class="muted">使用 0 个核心并行处理</span>
+            <button id="concurrency-btn" class="icon-btn" type="button" title="调整并发数" aria-label="调整并发数">
+              ⚙
+            </button>
+            <span id="concurrency-editor" class="concurrency-editor hidden">
+              <input id="concurrency-input" class="num-input" type="number" min="1" value="4" inputmode="numeric" />
+              <button id="concurrency-apply" class="btn-ghost" type="button">确定</button>
+            </span>
+          </div>
+
+          <button id="batch-stop" class="btn-danger hidden" type="button">停止</button>
+        </div>
+
+        <div class="card progress-card hidden" id="progress-card">
+          <div class="progress-line">
+            <span id="progress-text" class="progress-text">已完成 0 / 0</span>
+            <span id="progress-percent" class="progress-percent mono">0%</span>
+          </div>
+          <div class="progress-track">
+            <div id="progress-fill" class="progress-fill"></div>
+          </div>
+        </div>
+
+        <div class="card progress-card hidden" id="unzip-progress">
+          <div class="progress-line">
+            <span id="unzip-progress-text" class="progress-text">已完成 0 / 0</span>
+            <span class="progress-actions">
+              <span id="unzip-progress-percent" class="progress-percent mono">0%</span>
+              <button id="unzip-stop" class="btn-danger hidden" type="button">停止</button>
+            </span>
+          </div>
+          <div class="progress-track">
+            <div id="unzip-progress-fill" class="progress-fill"></div>
+          </div>
+        </div>
+
+        <div class="card table-card hidden" id="results-card">
+          <div class="card-head">
+            <h2>结果</h2>
+            <div class="head-actions">
+              <span id="results-note" class="muted"></span>
+              <button id="unzip-btn" class="btn-ghost hidden" type="button">解压全部已破解文件</button>
+              <button id="export-btn" class="btn-ghost hidden" type="button">导出 CSV</button>
+            </div>
+          </div>
+          <div class="table-wrap results-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th class="col-name sortable" data-sort="name">文件名<span class="sort-ind"></span></th>
+                  <th class="sortable" data-sort="status">结果<span class="sort-ind"></span></th>
+                  <th class="sortable" data-sort="unzip">解压状态<span class="sort-ind"></span></th>
+                  <th class="col-copy"></th>
+                </tr>
+              </thead>
+              <tbody id="results-body"></tbody>
+            </table>
+          </div>
+          <div class="table-foot hidden" id="results-foot"></div>
+        </div>
+      </section>
+    </main>
+
+    <div id="unzip-modal" class="modal-backdrop hidden">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="unzip-modal-title">
+        <h2 id="unzip-modal-title">确认解压</h2>
+        <p id="unzip-modal-text" class="modal-text"></p>
+        <p id="unzip-modal-dir" class="modal-dir mono"></p>
+        <label class="modal-check">
+          <input id="unzip-flat" type="checkbox" />
+          <span>全部解压到同一目录（重名文件自动加 _1、_2，不覆盖）</span>
+        </label>
+        <div class="modal-actions">
+          <button id="unzip-cancel" class="btn-ghost" type="button">取消</button>
+          <button id="unzip-confirm" class="btn-primary" type="button">开始解压</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="decrypt-modal" class="modal-backdrop hidden">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="decrypt-modal-title">
+        <h2 id="decrypt-modal-title">解密整个包</h2>
+        <p class="modal-text">用恢复出的密钥生成一份新 ZIP，原包不会被修改。</p>
+        <label class="modal-field">
+          <span class="label">输出路径</span>
+          <div class="path-row">
+            <input id="decrypt-output" class="path-input mono" type="text" spellcheck="false" />
+            <button id="decrypt-browse" class="btn-ghost" type="button">另存为…</button>
+          </div>
+        </label>
+        <label class="modal-field">
+          <span class="label">新密码（可留空）</span>
+          <input id="decrypt-password" class="path-input mono" type="text" spellcheck="false" placeholder="留空则生成无密码包" />
+        </label>
+        <div class="modal-actions">
+          <button id="decrypt-cancel" class="btn-ghost" type="button">取消</button>
+          <button id="decrypt-confirm" class="btn-primary" type="button">开始解密</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="confirm-modal" class="modal-backdrop hidden">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+        <h2 id="confirm-modal-title">确认</h2>
+        <p id="confirm-modal-text" class="modal-text"></p>
+        <div class="modal-actions">
+          <button id="confirm-cancel" class="btn-ghost" type="button">取消</button>
+          <button id="confirm-ok" class="btn-primary" type="button">确定</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="settings-modal" class="modal-backdrop hidden">
+      <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <h2 id="settings-title">设置</h2>
+        <p class="modal-text">
+          7z、bkcrack、john 已随程序内置，不用自己装；需要换成本机版本时在下面填路径。
+          改完立即生效，不用重启。
+        </p>
+        <p class="modal-dir mono" id="settings-path"></p>
+
+        <div id="settings-tools" class="settings-tools"></div>
+
+        <div class="settings-grid">
+          <label class="settings-field">
+            <span class="label">批量破解并发数</span>
+            <input id="settings-batch-concurrency" class="num-input" type="number" min="1" value="4" />
+            <span class="muted small" id="settings-batch-hint"></span>
+          </label>
+          <label class="settings-field">
+            <span class="label">批量解压并发数</span>
+            <input id="settings-unzip-concurrency" class="num-input" type="number" min="1" max="8" value="3" />
+            <span class="muted small">1–8，解压是 IO 密集型，再多只会抢同一块盘</span>
+          </label>
+          <div class="settings-field settings-field-wide">
+            <span class="label">默认导出目录</span>
+            <div class="path-row">
+              <input id="settings-export-dir" class="path-input mono" type="text" spellcheck="false" placeholder="留空则不指定" />
+              <button id="settings-export-browse" class="btn-ghost" type="button">浏览…</button>
+              <button id="settings-export-save" class="btn-ghost" type="button">保存</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 关于与赞助：和上面的功能设置用分隔线隔开，避免被当成开关 -->
+        <div class="settings-about">
+          <div class="about-head">
+            <span class="about-title">关于与赞助</span>
+            <span class="about-version" id="about-version"></span>
+          </div>
+          <p class="about-meta">
+            <span class="about-item">
+              项目地址
+              <a href="https://github.com/bliey/zipkit" id="about-repo" class="about-link">github.com/bliey/zipkit</a>
+            </span>
+            <span class="about-item">内置工具 <span id="about-builtin" class="muted">检测中…</span></span>
+          </p>
+          <p id="about-builtin-error" class="about-error hidden"></p>
+
+          <div class="sponsor-row">
+            <span class="sponsor-link" data-qr="alipay">支付宝</span>
+            <span class="sponsor-link" data-qr="wechat">微信</span>
+            <span class="sponsor-link" data-qr="paypal">PayPal</span>
+            <span class="muted small">点一下看收款码</span>
+          </div>
+          <img id="sponsor-qr" class="sponsor-qr hidden" alt="赞助二维码" />
+        </div>
+
+        <div class="modal-actions">
+          <button id="settings-recheck" class="btn-ghost" type="button">重新检测</button>
+          <button id="settings-close" class="btn-primary" type="button">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 轻提示：3 秒后自动消失，不打断操作，也不用确认 -->
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

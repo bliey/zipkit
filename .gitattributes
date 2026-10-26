@@ -1,0 +1,11 @@
+# 统一换行符：仓库里一律 LF，检出时按平台自动转换。
+# 前端与 Go 源码在 Windows / macOS / Linux 上都要能直接用，不统一会出现整文件 diff。
+* text=auto eol=lf
+
+# 二进制资源：不要做换行转换，也不要尝试 diff
+*.png binary
+*.ico binary
+*.icns binary
+*.car binary
+*.zip binary
+*.exe binary

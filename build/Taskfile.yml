@@ -1,0 +1,77 @@
+version: '3'
+
+# Shared tasks. The frontend is plain HTML/CSS/JS with no build step, so
+# build:frontend is intentionally a no-op that keeps the per-platform
+# Taskfiles working unchanged.
+
+tasks:
+  go:mod:tidy:
+    summary: Runs `go mod tidy`
+    internal: true
+    # Universal/multi-arch builds invoke this concurrently from parallel deps;
+    # two `go mod tidy` processes racing on go.mod can corrupt it (#4637).
+    run: once
+    cmds:
+      - go mod tidy
+
+  build:frontend:
+    summary: No-op — the frontend is static and embedded straight from frontend/
+    run: once
+    cmds:
+      - echo "frontend is plain HTML/CSS/JS; nothing to build"
+
+  generate:bindings:
+    summary: Generates optional JS/TS bindings for editors and TypeScript users
+    desc: |
+      zipkit calls the Go service by name through /wails/runtime.js, so bindings
+      are not required to build or run the app. Run this only if you want the
+      generated models for tooling.
+    deps:
+      - task: go:mod:tidy
+    cmds:
+      - wails3 generate bindings -b -clean=true
+
+  generate:icons:
+    summary: Generates the Windows `.ico` from appicon.png
+    run: once
+    dir: build
+    sources:
+      - "appicon.png"
+    generates:
+      - "windows/icon.ico"
+    # wails3 generate icons 无论目标平台都会写一份 macOS 的 .icns（-macfilename
+    # 默认 build/darwin/icon.icns）。这里把它指到 build/icons.icns，该文件已在
+    # .gitignore 里排除，这样就不必为了一个用不到的文件保留 build/darwin/。
+    cmds:
+      - wails3 generate icons -input appicon.png -windowsfilename windows/icon.ico -macfilename icons.icns
+
+  update:build-assets:
+    summary: Updates the build assets
+    dir: build
+    cmds:
+      - wails3 update build-assets -name "{{.APP_NAME}}" -binaryname "{{.APP_NAME}}" -config config.yml -dir .
+
+  build:server:
+    summary: Builds the application in server mode (no GUI, HTTP server only)
+    desc: |
+      Builds a production server binary by default: -tags server,production,
+      -trimpath and a stripped binary, mirroring the desktop `build` task.
+
+      Usage: task build:server [DEV=true] [EXTRA_TAGS=tag1,tag2]
+        DEV=true        development server (-tags server, no strip, inlining kept)
+        EXTRA_TAGS      additional comma-separated build tags
+    deps:
+      - task: build:frontend
+    cmds:
+      - 'go build {{.BUILD_FLAGS}} -o "{{.BIN_DIR}}/{{.APP_NAME}}-server{{exeExt}}"'
+    vars:
+      BUILD_FLAGS: '-tags server{{if eq .DEV "true"}}{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -buildvcs=false -gcflags=all="-l"{{else}},production{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -buildvcs=false -ldflags="-w -s -X main.Version={{.VERSION}}"{{end}}'
+
+  run:server:
+    summary: Builds and runs a development server (DEV=true)
+    deps:
+      - task: build:server
+        vars:
+          DEV: "true"
+    cmds:
+      - '"./{{.BIN_DIR}}/{{.APP_NAME}}-server{{exeExt}}"'

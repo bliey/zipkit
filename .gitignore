@@ -1,0 +1,39 @@
+# ---------------------------------------------------------------- 构建产物
+.task
+bin/
+build/bin/
+# 发版用的重命名产物（zipkit-windows-amd64.exe 之类）
+dist/
+# wails3 build 会把可执行文件放在仓库根目录，别提交进来
+/zipkit.exe
+/zipkit-server.exe
+*.syso
+# 图标生成任务顺带产出的 macOS .icns（本项目只发 Windows，不保留这个文件）
+build/icons.icns
+build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
+
+# -------------------------------------------------------------------- 前端
+# 前端是原生 HTML/CSS/JS，没有构建步骤；这几条是防止有人误跑 npm 之后提交
+frontend/dist/
+frontend/node_modules/
+# Generated on demand by `wails3 task common:generate:bindings`
+frontend/bindings
+
+# ------------------------------------------------------------ 内置工具二进制
+# internal/embedded/tools/ 的二进制合计十几 MB，超过「仓库内单个目录 10 MB」
+# 的取舍线，所以只提交目录结构。获取方式见 README 的「从源码构建」。
+internal/embedded/tools/**/*.gz
+
+# ------------------------------------------- 已移除的平台构建目录（防止带回）
+# 本项目只发布 Windows 版本，这些目录不再保留。`wails3 update build-assets`
+# 之类命令可能重新生成它们，加了忽略就不会被误提交。
+build/android/
+build/ios/
+build/linux/
+build/darwin/
+
+# ------------------------------------------------------------ 系统与临时文件
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
